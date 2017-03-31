@@ -182,5 +182,41 @@ public static class Program
                 .Should()
                 .Pass();
         }
+
+        [Fact]
+        public void It_publishes_documentation_file_when_documentation_generation_is_turned_on()
+        {
+            var helloWorldAsset = _testAssetsManager
+                .CopyTestAsset("HelloWorld")
+                .WithSource()
+                .Restore();
+
+            var publishCommand = new PublishCommand(Stage0MSBuild, helloWorldAsset.TestRoot);
+            var publishResult = publishCommand.Execute("/p:GenerateDocumentationFile=true");
+
+            publishResult.Should().Pass();
+
+            var publishDirectory = publishCommand.GetOutputDirectory();
+
+            publishDirectory.Should().HaveFile("HelloWorld.xml");
+        }
+
+        [Fact]
+        public void It_does_not_publish_documentation_file_when_publishing_documentation_file_is_disabled()
+        {
+            var helloWorldAsset = _testAssetsManager
+                .CopyTestAsset("HelloWorld")
+                .WithSource()
+                .Restore();
+
+            var publishCommand = new PublishCommand(Stage0MSBuild, helloWorldAsset.TestRoot);
+            var publishResult = publishCommand.Execute("/p:GenerateDocumentationFile=true;PublishDocumentationFile=false");
+
+            publishResult.Should().Pass();
+
+            var publishDirectory = publishCommand.GetOutputDirectory();
+
+            publishDirectory.Should().NotHaveFile("HelloWorld.xml");
+        }
     }
 }

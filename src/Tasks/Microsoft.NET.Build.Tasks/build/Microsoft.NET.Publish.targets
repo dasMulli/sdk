@@ -201,6 +201,12 @@ Copyright (c) .NET Foundation. All rights reserved.
       <ResolvedFileToPublish Include="@(ResolvedAssembliesToPublish)">
         <RelativePath>%(ResolvedAssembliesToPublish.DestinationSubPath)</RelativePath>
       </ResolvedFileToPublish>
+
+      <!-- Copy the xml documentation (if enabled) -->
+      <ResolvedFileToPublish Include="@(FinalDocFile)"
+                              Condition="'$(PublishDocumentationFile)' == 'true'">
+        <RelativePath>@(FinalDocFile->'%(Filename)%(Extension)')</RelativePath>
+      </ResolvedFileToPublish>
     </ItemGroup>
 
   </Target>
