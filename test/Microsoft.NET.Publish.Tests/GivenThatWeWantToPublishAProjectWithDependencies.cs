@@ -14,6 +14,7 @@ using System.Runtime.InteropServices;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System.Collections.Generic;
+using Microsoft.NET.TestFramework.ProjectConstruction;
 
 namespace Microsoft.NET.Publish.Tests
 {
@@ -200,15 +201,15 @@ namespace Microsoft.NET.Publish.Tests
 
         [Theory]
         [MemberData(nameof(PublishDocumentationExpectations))]
-        public void It_publishes_documentation_files(string properties, bool expectAppDocPublished, bool expectLibDocPublished)
+        public void It_publishes_documentation_files(string properties, bool expectAppDocPublished, bool expectLibProjectDocPublished)
         {
             var kitchenSinkAsset = _testAssetsManager
-                .CopyTestAsset("KitchenSink")
+                .CopyTestAsset("KitchenSink", identifier: $"{expectAppDocPublished}_{expectLibProjectDocPublished}")
                 .WithSource();
             kitchenSinkAsset.Restore("TestApp");
-
+            
             var publishCommand = new PublishCommand(Stage0MSBuild, Path.Combine(kitchenSinkAsset.TestRoot, "TestApp"));
-            var publishResult = publishCommand.Execute(properties);
+            var publishResult = publishCommand.Execute("/p:" + properties);
 
             publishResult.Should().Pass();
 
@@ -223,7 +224,7 @@ namespace Microsoft.NET.Publish.Tests
                 publishDirectory.Should().NotHaveFile("TestApp.xml");
             }
 
-            if (expectLibDocPublished)
+            if (expectLibProjectDocPublished)
             {
                 publishDirectory.Should().HaveFile("TestLibrary.xml");
             }
@@ -237,10 +238,62 @@ namespace Microsoft.NET.Publish.Tests
         {
             get
             {
-                yield return new object[] { "/p:GenerateDocumentationFile=true", true, true };
-                yield return new object[] { "/p:GenerateDocumentationFile=true;PublishDocumentationFile=false", false, true };
-                yield return new object[] { "/p:GenerateDocumentationFile=true;PublishProjectReferenceDocumentationFiles=false", true, false };
-                yield return new object[] { "/p:GenerateDocumentationFile=true;PublishDocumentationFiles=false", false, false };
+                yield return new object[] { "GenerateDocumentationFile=true", true, true };
+                yield return new object[] { "GenerateDocumentationFile=true;PublishDocumentationFile=false", false, true };
+                yield return new object[] { "GenerateDocumentationFile=true;PublishReferencesDocumentationFiles=false", true, false };
+                yield return new object[] { "GenerateDocumentationFile=true;PublishDocumentationFiles=false", false, false };
+            }
+        }
+
+        [Theory]
+        [InlineData("PublishReferencesDocumentationFiles=false", false)]
+        [InlineData("PublishReferencesDocumentationFiles=true", true)]
+        public void It_publishes_referenced_assembly_documentation(string property, bool expectAssemblyDocumentationFilePublished)
+        {
+            var identifier = property.Replace("=", "");
+
+            var libProject = new TestProject
+            {
+                Name = "NetStdLib",
+                IsSdkProject = true,
+                TargetFrameworks = "netstandard1.0"
+            };
+
+            var libAsset = _testAssetsManager.CreateTestProject(libProject, identifier: identifier)
+                .Restore("NetStdLib");
+
+            var libPublishCommand = new PublishCommand(Stage0MSBuild, Path.Combine(libAsset.TestRoot, "NetStdLib"));
+            var libPublishResult = libPublishCommand.Execute("/t:Publish", "/p:GenerateDocumentationFile=true");
+            libPublishResult.Should().Pass();
+            var publishedLibPath = Path.Combine(libPublishCommand.GetOutputDirectory("netstandard1.0").FullName, "NetStdLib.dll");
+
+            var appProject = new TestProject
+            {
+                Name = "TestApp",
+                IsSdkProject = true,
+                IsExe = true,
+                TargetFrameworks = "netcoreapp2.0",
+                RuntimeFrameworkVersion = RepoInfo.NetCoreApp20Version,
+                References = { publishedLibPath }
+            };
+
+            var appAsset = _testAssetsManager.CreateTestProject(appProject, identifier: identifier);
+            var appSourcePath  = Path.Combine(appAsset.TestRoot, "TestApp");
+
+            new RestoreCommand(Stage0MSBuild, appSourcePath).Execute().Should().Pass();
+            var appPublishCommand = new PublishCommand(Stage0MSBuild, appSourcePath);
+            var appPublishResult = appPublishCommand.Execute("/p:" + property);
+            appPublishResult.Should().Pass();
+
+            var appPublishDirectory = appPublishCommand.GetOutputDirectory("netcoreapp2.0");
+
+            if (expectAssemblyDocumentationFilePublished)
+            {
+                appPublishDirectory.Should().HaveFile("NetStdLib.xml");
+            }
+            else
+            {
+                appPublishDirectory.Should().NotHaveFile("NetStdLib.xml");
             }
         }
 
