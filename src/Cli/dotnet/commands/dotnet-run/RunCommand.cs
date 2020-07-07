@@ -3,8 +3,10 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using Microsoft.Build.Execution;
 using Microsoft.Build.Exceptions;
 using Microsoft.DotNet.Cli.Utils;
@@ -49,7 +51,7 @@ namespace Microsoft.DotNet.Tools.Run
             try
             {
                 ICommand targetCommand = GetTargetCommand();
-                if (!ApplyLaunchProfileSettingsIfNeeded(ref targetCommand))
+                if (!ApplyLaunchProfileSettingsIfNeeded(ref targetCommand, out var launchUrl))
                 {
                     return 1;
                 }
@@ -57,7 +59,17 @@ namespace Microsoft.DotNet.Tools.Run
                 // Ignore Ctrl-C for the remainder of the command's execution
                 Console.CancelKeyPress += (sender, e) => { e.Cancel = true; };
 
-                return targetCommand.Execute().ExitCode;
+                CommandResult result = targetCommand switch {
+                    INotifyingCommand notifyingCommand => notifyingCommand.Execute(() => {
+                        if (launchUrl != null)
+                        {
+                            TryLaunchBrowser(launchUrl);
+                        }
+                    }),
+                    _ => targetCommand.Execute()
+                };
+
+                return result.ExitCode;
             }
             catch (InvalidProjectFileException e)
             {
@@ -92,8 +104,10 @@ namespace Microsoft.DotNet.Tools.Run
             Interactive = interactive;
         }
 
-        private bool ApplyLaunchProfileSettingsIfNeeded(ref ICommand targetCommand)
+        private bool ApplyLaunchProfileSettingsIfNeeded(ref ICommand targetCommand, out string launchUrl)
         {
+            launchUrl = null;
+
             if (!UseLaunchProfile)
             {
                 return true;
@@ -130,6 +144,10 @@ namespace Microsoft.DotNet.Tools.Run
                     if (!applyResult.Success)
                     {
                         Reporter.Error.WriteLine(string.Format(LocalizableStrings.RunCommandExceptionCouldNotApplyLaunchSettings, profileName, applyResult.FailureReason).Bold().Red());
+                    }
+                    else
+                    {
+                        launchUrl = applyResult.RunAfterLaunch;
                     }
                 }
                 catch (IOException ex)
@@ -288,6 +306,29 @@ namespace Microsoft.DotNet.Tools.Run
             }
 
             return projectFiles[0];
+        }
+
+        private static void TryLaunchBrowser(string url)
+        {
+            var psi = new ProcessStartInfo();
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+            {
+                psi.FileName = "open";
+                psi.ArgumentList.Add(url);
+            }
+            else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+            {
+                psi.FileName = "xdg-open";
+                psi.ArgumentList.Add(url);
+            }
+            else
+            {
+                psi.FileName = "cmd";
+                psi.ArgumentList.Add("/C");
+                psi.ArgumentList.Add("start");
+                psi.ArgumentList.Add(url);
+            }
+            Process.Start(psi);
         }
     }
 }

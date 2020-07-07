@@ -12,7 +12,7 @@ using NuGet.Frameworks;
 
 namespace Microsoft.DotNet.Cli.Utils
 {
-    public class Command : ICommand
+    public class Command : ICommand, INotifyingCommand
     {
         private readonly Process _process;
 
@@ -34,6 +34,17 @@ namespace Microsoft.DotNet.Cli.Utils
         {
             return Execute(_ => { });
         }
+
+        public CommandResult Execute(Action commandStarted)
+        {
+            return Execute(_ => {
+                if (commandStarted != null)
+                {
+                    commandStarted();
+                }
+            });
+        }
+
         public CommandResult Execute(Action<Process> processStarted)
         {
             Reporter.Verbose.WriteLine(string.Format(

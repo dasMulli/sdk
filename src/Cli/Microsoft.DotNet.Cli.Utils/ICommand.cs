@@ -30,4 +30,9 @@ namespace Microsoft.DotNet.Cli.Utils
 
         string CommandArgs { get; }
     }
+
+    public interface INotifyingCommand: ICommand
+    {
+        CommandResult Execute(Action commandStarted);
+    }
 }
